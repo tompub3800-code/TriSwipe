@@ -20,6 +20,14 @@ final class SortStore {
 
     var mediaFilter: MediaFilter = .all { didSet { refreshSummaries() } }
     var order: SortOrder = .newest
+    /// N'afficher que ce qui n'est rangé dans aucun album (le vrai « reste à trier »).
+    var onlyUnfiled = false { didSet { refreshSummaries(); scheduleSave() } }
+
+    /// Album créé par le pré-tri automatique du Mac (« 🔍 Tri Mac – à vérifier »).
+    private(set) var reviewAlbum: AlbumInfo?
+    private var reviewIDs: Set<String> = []
+    private var filedIDs: Set<String> = []
+    static let reviewAlbumMarker = "Tri Mac"
 
     var session: SortSession?
     private(set) var history: [UndoAction] = []
@@ -93,6 +101,14 @@ final class SortStore {
         let albumList = await Task.detached { PhotoService.userAlbums() }.value
         setIndex(list)
         albums = albumList
+        reviewAlbum = albumList.first { $0.title.localizedCaseInsensitiveContains(Self.reviewAlbumMarker) }
+        let excluded = Set(albumList.filter {
+            $0.title.localizedCaseInsensitiveContains(Self.reviewAlbumMarker)
+            || $0.title.localizedCaseInsensitiveContains("vérifier avant suppression")
+        }.map(\.id))
+        let reviewID = reviewAlbum?.id
+        reviewIDs = await Task.detached { reviewID.map { Set(PhotoService.assetIDs(inAlbum: $0)) } ?? [] }.value
+        filedIDs = await Task.detached { PhotoService.filedAssetIDs(excluding: excluded) }.value
         // On oublie ce qui a été supprimé depuis l'app Photos.
         trash = trash.filter { positionByID[$0.key] != nil }
         recentAlbumIDs = recentAlbumIDs.filter { id in albumList.contains { $0.id == id } }
@@ -130,6 +146,15 @@ final class SortStore {
         reviewed.contains(id) || trash[id] != nil
     }
 
+    /// À trier au goût : pas encore traité, pas dans le pré-tri du Mac,
+    /// et (si l'option est cochée) rangé dans aucun album.
+    private func isPending(_ a: AssetInfo) -> Bool {
+        !isDone(a.id) && !reviewIDs.contains(a.id) && !(onlyUnfiled && filedIDs.contains(a.id))
+    }
+
+    /// Nombre d'éléments du pré-tri du Mac qui restent à vérifier.
+    var reviewRemaining: Int { reviewIDs.filter { !isDone($0) && positionByID[$0] != nil }.count }
+
     // MARK: Résumés pour l'écran d'accueil
 
     func refreshSummaries() {
@@ -139,6 +164,7 @@ final class SortStore {
             let c = calendar.dateComponents([.year, .month], from: a.date)
             let key = (c.year ?? 0) * 100 + (c.month ?? 0)
             var entry = counts[key] ?? (0, 0)
+            if reviewIDs.contains(a.id) || (onlyUnfiled && filedIDs.contains(a.id)) { continue }
             entry.total += 1
             if !isDone(a.id) { entry.remaining += 1 }
             counts[key] = entry
@@ -168,7 +194,7 @@ final class SortStore {
 
     private func items(for source: SortSource) -> [AssetInfo] {
         let calendar = Calendar.current
-        let pending = index.filter { !isDone($0.id) }
+        let pending = index.filter { isPending($0) }
 
         switch source {
         case .all:
@@ -450,6 +476,7 @@ final class SortStore {
         deletedByMonth = state.deletedByMonth
         bytesByMonth = state.bytesByMonth
         lastMonth = state.lastMonth
+        onlyUnfiled = state.onlyUnfiled ?? false
     }
 
     private func scheduleSave() {
@@ -472,7 +499,8 @@ final class SortStore {
             cleanups: cleanups,
             deletedByMonth: deletedByMonth,
             bytesByMonth: bytesByMonth,
-            lastMonth: lastMonth
+            lastMonth: lastMonth,
+            onlyUnfiled: onlyUnfiled
         )
         if let data = try? JSONEncoder().encode(state) {
             try? data.write(to: stateURL, options: .atomic)

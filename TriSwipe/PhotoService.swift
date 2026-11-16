@@ -86,6 +86,16 @@ enum PhotoService {
         return ids
     }
 
+    /// Toutes les photos déjà rangées dans au moins un album perso,
+    /// sauf les albums dont l'id est dans `excluding` (ex. albums de pré-tri).
+    nonisolated static func filedAssetIDs(excluding: Set<String>) -> Set<String> {
+        var ids = Set<String>()
+        for album in userAlbums() where !excluding.contains(album.id) {
+            ids.formUnion(assetIDs(inAlbum: album.id))
+        }
+        return ids
+    }
+
     nonisolated static func image(for id: String, size: CGSize) async -> UIImage? {
         guard let asset = asset(id) else { return nil }
         let options = PHImageRequestOptions()

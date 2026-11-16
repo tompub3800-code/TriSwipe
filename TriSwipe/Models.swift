@@ -103,6 +103,7 @@ struct PersistedState: Codable {
     var deletedByMonth: [String: Int] = [:]
     var bytesByMonth: [String: Int64] = [:]
     var lastMonth: String? = nil
+    var onlyUnfiled: Bool? = nil
 }
 
 struct SortSession {

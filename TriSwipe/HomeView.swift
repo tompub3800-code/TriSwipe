@@ -54,6 +54,32 @@ struct HomeView: View {
                         ForEach(SortOrder.allCases) { Text($0.rawValue).tag($0) }
                     }
                     .pickerStyle(.segmented)
+
+                    Toggle("Seulement ce qui n'est dans aucun album", isOn: $store.onlyUnfiled)
+                }
+
+                if let review = store.reviewAlbum, store.reviewRemaining > 0 {
+                    Section {
+                        Button {
+                            store.start(.album(review.id), title: "Pré-tri du Mac")
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "wand.and.stars")
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 34, height: 34)
+                                    .background(Color.pink, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Pré-tri du Mac à vérifier").foregroundStyle(.primary)
+                                    Text("Garder = sortir de la liste · Supprimer = corbeille")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Text("\(store.reviewRemaining)").foregroundStyle(.secondary).monospacedDigit()
+                                Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
                 }
 
                 Section("Tri rapide") {
